@@ -1,0 +1,1 @@
+dados_enem/microdados_enem_2023/DADOS/MICRODADOS_ENEM_2023.csv filter=lfs diff=lfs merge=lfs -text
