@@ -39,6 +39,17 @@ def main():
             - 2023: Novo formato de cadernos de prova
             """)
 
+        
+        st.divider()
+        
+        st.header("Objetivo do Dashboard")
+        st.markdown("""
+        Este dashboard tem como objetivo analisar quais parcelas da sociedade são efetivamente alcançadas pelo ENEM em relação ao acesso ao ensino superior. 
+        Busca-se identificar e evidenciar possíveis vieses associados a fatores socioeconômicos, permitindo compreender de que forma as condições sociais dos participantes influenciam suas oportunidades de ingresso na universidade. 
+        A análise visa contribuir para o debate sobre a equidade do exame e seu papel como instrumento de democratização do ensino superior no Brasil.
+        """)
+        
+
         st.divider()
         
         st.header("Contextualização dos Bancos de Dados")
@@ -106,6 +117,17 @@ def main():
         Lei Geral de Proteção de Dados (LGPD). Informações identificáveis foram 
         removidas ou anonimizadas para preservar a privacidade dos participantes.
         """)
+
+    with tab_enem2023:
+        st.header("Análise dos Microdados ENEM 2023")
+        st.markdown("""
+        Nesta seção, serão apresentados gráficos e análises dos microdados do ENEM 2023,
+        com foco em aspectos socioeconômicos, desempenho e características dos participantes.
+        """)
+
+        
+
+
 
 if __name__ == "__main__":
     main()
