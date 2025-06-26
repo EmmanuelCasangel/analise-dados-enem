@@ -1,6 +1,29 @@
+import pandas as pd
 import streamlit as st
+import numpy as np
+
+
 
 def main():
+    colunas_necessarias = [
+        'TP_FAIXA_ETARIA', 'TP_SEXO', 'TP_ESTADO_CIVIL', 'TP_COR_RACA', 'TP_NACIONALIDADE',
+        'TP_ST_CONCLUSAO', 'TP_ESCOLA', 'IN_TREINEIRO', 'TP_PRESENCA_CN',
+        'TP_PRESENCA_CH', 'TP_PRESENCA_LC', 'TP_PRESENCA_MT', 'NU_NOTA_CN', 'NU_NOTA_CH',
+        'NU_NOTA_LC', 'NU_NOTA_MT', 'TP_STATUS_REDACAO', 'NU_NOTA_COMP1', 'NU_NOTA_COMP2',
+        'NU_NOTA_COMP3', 'NU_NOTA_COMP4', 'NU_NOTA_COMP5', 'NU_NOTA_REDACAO',
+        'Q001', 'Q002', 'Q003', 'Q004', 'Q005', 'Q006', 'Q007', 'Q008', 'Q009', 'Q010',
+        'Q011', 'Q012', 'Q013', 'Q014', 'Q015', 'Q016', 'Q017', 'Q018', 'Q019', 'Q020',
+        'Q021', 'Q022', 'Q023', 'Q024', 'Q025'
+    ]
+
+    df = pd.read_csv(
+        'dados_enem/microdados_enem_2023/DADOS/MICRODADOS_ENEM_2023.csv',
+        sep=';',
+        encoding='latin1',
+        usecols=colunas_necessarias
+    )
+
+
     st.set_page_config(
         page_title="Dashboard ENEM",
         page_icon="📊",
@@ -10,10 +33,10 @@ def main():
     st.title("Análise de Dados do ENEM")
     st.subheader("Dashboard de Microdados Educacionais")
     
-    tab_intro, tab_enem2023, tab_enem_escola = st.tabs([
+    tab_intro, tab_enem2023, tab_exploracao = st.tabs([
         "Introdução", 
         "Microdados ENEM 2023", 
-        "Microdados por Escola"
+        "Exploração de Dados"
     ])
     
     with tab_intro:
@@ -83,34 +106,6 @@ def main():
             - Exclusão de variáveis identificadoras
             - Faixas etárias em vez de idade exata
             """)
-        
-        # Container para Microdados por Escola
-        with st.expander("### 2. Microdados ENEM por Escola", expanded=True):
-            st.markdown("""
-            **Fonte:** Instituto Nacional de Estudos e Pesquisas Educacionais (INEP)  
-            **Período:** Dados históricos de 2005 a 2015  
-            **Objetivo:** Fornecer indicadores de desempenho por instituição de ensino
-            
-            **Principais características:**
-            - Dados agregados por escola
-            - Médias de desempenho por área
-            - Indicadores educacionais complementares
-            - Taxas de participação e rendimento
-            - Informações cadastrais das escolas
-            
-            **Variáveis relevantes:**
-            - Médias por área de conhecimento
-            - Nota de redação
-            - Indicador de Nível Socioeconômico (INSE)
-            - Taxas de aprovação/reprovação
-            - Porte da escola e dependência administrativa
-            
-            **Contexto histórico:**
-            - Programa descontinuado em 2017
-            - Críticas sobre uso para rankings escolares
-            - Substituído pelo SAEB como indicador oficial
-            """)
-        
 
         st.info("""
         **Nota importante:** Os dados são oficiais do INEP e seguem as diretrizes da 
@@ -125,8 +120,43 @@ def main():
         com foco em aspectos socioeconômicos, desempenho e características dos participantes.
         """)
 
-        
+        st.subheader("Distribuição de Situação por Tipo de Escola")
 
+
+
+        # Cria uma coluna de status para cada linha (presente, ausente/eliminado)
+        def classifica_status(row):
+            if all(row[col] == 1 for col in ['TP_PRESENCA_CN', 'TP_PRESENCA_CH', 'TP_PRESENCA_LC', 'TP_PRESENCA_MT']):
+                return 'Presente'
+            elif any(row[col] == 0 or row[col] == 2 for col in
+                     ['TP_PRESENCA_CN', 'TP_PRESENCA_CH', 'TP_PRESENCA_LC', 'TP_PRESENCA_MT']):
+                return 'Ausente/Eliminado'
+            return np.nan
+
+        df['Status'] = df.apply(classifica_status, axis=1)
+
+        # Mapeia os tipos de escola para nomes legíveis
+        mapa_escola = {1: 'Pública', 2: 'Privada', 3: 'Não Informada'}
+        df['Tipo de Escola'] = df['TP_ESCOLA'].map(mapa_escola)
+
+        # Agrupa e conta
+        agrupado = df.groupby(['Tipo de Escola', 'Status']).size().unstack(fill_value=0)
+        agrupado['Total'] = agrupado.sum(axis=1)
+        agrupado['% Presentes'] = agrupado.get('Presente', 0) / agrupado['Total'] * 100
+        agrupado['% Ausentes/Eliminados'] = agrupado.get('Ausente/Eliminado', 0) / agrupado['Total'] * 100
+
+        # Prepara DataFrame final
+        df_resultado = agrupado.reset_index()[
+            ['Tipo de Escola', '% Presentes', '% Ausentes/Eliminados', 'Presente', 'Ausente/Eliminado',
+             'Total']].fillna(0)
+
+        # Visualização
+        st.subheader("Percentual de Presença e Ausência/Eliminação por Tipo de Escola")
+        st.dataframe(df_resultado[["Tipo de Escola", "% Presentes", "% Ausentes/Eliminados"]])
+        st.bar_chart(
+            df_resultado.set_index("Tipo de Escola")[["% Presentes", "% Ausentes/Eliminados"]],
+            use_container_width=True
+        )
 
 
 if __name__ == "__main__":
