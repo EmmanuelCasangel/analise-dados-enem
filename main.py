@@ -1,8 +1,10 @@
 import pandas as pd
 import streamlit as st
 import numpy as np
-
-
+import seaborn as sns
+import matplotlib.pyplot as plt
+from scipy.stats import chi2_contingency
+from sklearn.feature_selection import mutual_info_regression
 
 def main():
     colunas_necessarias = [
@@ -157,6 +159,107 @@ def main():
             df_resultado.set_index("Tipo de Escola")[["% Presentes", "% Ausentes/Eliminados"]],
             use_container_width=True
         )
+
+    with tab_exploracao:
+        def cramers_v(x, y):
+            confusion_matrix = pd.crosstab(x, y)
+            chi2 = chi2_contingency(confusion_matrix)[0]
+            n = confusion_matrix.sum().sum()
+            phi2 = chi2 / n
+            r, k = confusion_matrix.shape
+            phi2corr = max(0, phi2 - ((k - 1) * (r - 1)) / (n - 1))
+            rcorr = r - ((r - 1) ** 2) / (n - 1)
+            kcorr = k - ((k - 1) ** 2) / (n - 1)
+            return np.sqrt(phi2corr / min((kcorr - 1), (rcorr - 1)))
+
+        with tab_exploracao:
+            st.header("Escolhendo variaveis categóricas mais interessantes para clusterizacão")
+
+            st.markdown("""
+                Nesta seção, buscamos identificar quais variáveis categóricas são mais relevantes para a clusterização em relação às notas do ENEM.
+
+                O primeiro passo consiste em calcular a correlação entre as variáveis categóricas utilizando o V de Cramer, a fim de identificar possíveis redundâncias. Caso sejam encontradas variáveis altamente correlacionadas, podemos optar por eliminar algumas delas para evitar sobreposição de informações.
+
+                Em seguida, aplicamos a análise de informação mútua para determinar quais variáveis categóricas apresentam maior relação com as notas do ENEM. Dessa forma, selecionamos as variáveis mais significativas para compor a clusterização.
+            """)
+            variaveis_cat = [
+                'Q001', 'Q002', 'Q003', 'Q004', 'Q005', 'Q006', 'Q007', 'Q008', 'Q009', 'Q010',
+                'Q011', 'Q012', 'Q013', 'Q014', 'Q015', 'Q016', 'Q017', 'Q018', 'Q019', 'Q020',
+                'Q021', 'Q022', 'Q023', 'Q024', 'Q025', 'TP_FAIXA_ETARIA', 'TP_SEXO', 'TP_ESTADO_CIVIL',
+                'TP_COR_RACA', 'TP_ESCOLA'
+            ]
+            df_cat = df[variaveis_cat].dropna()
+
+            matriz_v = pd.DataFrame(
+                np.zeros((len(variaveis_cat), len(variaveis_cat))),
+                columns=variaveis_cat, index=variaveis_cat
+            )
+
+            for i, var1 in enumerate(variaveis_cat):
+                for j, var2 in enumerate(variaveis_cat):
+                    if i >= j:
+                        matriz_v.iloc[i, j] = cramers_v(df_cat[var1], df_cat[var2])
+
+            # Salvar matriz V de Cramer
+            matriz_v.to_csv('matriz_v_cramer.csv')
+            #
+            # # Para carregar depois:
+            # matriz_v = pd.read_csv('matriz_v_cramer.csv', index_col=0)
+
+            # Extrai pares únicos (sem diagonal e sem duplicatas)
+            correlacoes = []
+            for i in range(len(variaveis_cat)):
+                for j in range(i):
+                    correlacoes.append((
+                        variaveis_cat[i],
+                        variaveis_cat[j],
+                        matriz_v.iloc[i, j]
+                    ))
+
+            # Ordena do maior para o menor
+            correlacoes_ordenadas = sorted(correlacoes, key=lambda x: x[2], reverse=True)
+
+            # Cria DataFrame para exibir
+            df_correlacoes = pd.DataFrame(correlacoes_ordenadas, columns=['Variável 1', 'Variável 2', 'V de Cramer'])
+
+            st.subheader("Lista de Correlações (V de Cramer) - Ordem Decrescente")
+            st.dataframe(df_correlacoes, use_container_width=True)
+
+
+        # Defina as variáveis
+        notas = ['NU_NOTA_CN', 'NU_NOTA_CH', 'NU_NOTA_LC', 'NU_NOTA_MT', 'NU_NOTA_REDACAO']
+        categoricas = [
+            'Q001', 'Q002', 'Q003', 'Q004', 'Q005', 'Q006', 'Q007', 'Q008', 'Q009', 'Q010',
+            'Q011', 'Q012', 'Q013', 'Q014', 'Q015', 'Q016', 'Q017', 'Q018', 'Q019', 'Q020',
+            'Q021', 'Q022', 'Q023', 'Q024', 'Q025', 'TP_FAIXA_ETARIA', 'TP_SEXO', 'TP_ESTADO_CIVIL',
+            'TP_COR_RACA', 'TP_ESCOLA'
+        ]
+
+        # Remova nulos
+        df_mi = df[notas + categoricas].dropna()
+
+        # Codifique as variáveis categóricas como números inteiros
+        df_encoded = df_mi.copy()
+        for col in categoricas:
+            df_encoded[col] = df_encoded[col].astype("category").cat.codes
+
+        # Calcule e exiba o ranking para cada nota
+        for nota in notas:
+            mi_scores = mutual_info_regression(
+                df_encoded[categoricas], df_encoded[nota], discrete_features=True, random_state=0
+            )
+            mi_ranking = pd.Series(mi_scores, index=categoricas).sort_values(ascending=False)
+            # Salva o ranking em CSV
+            mi_ranking.to_csv(f'mi_ranking_{nota}.csv')
+
+            # mi_ranking = pd.read_csv(f'mi_ranking_{nota}.csv', index_col=0)
+
+            # Exibe no Streamlit
+            st.subheader(f"Variáveis categóricas mais correlacionadas com {nota}")
+            st.dataframe(mi_ranking.reset_index().rename(columns={'index': 'Variável', 0: 'Informação Mútua'}))
+
+
+
 
 
 if __name__ == "__main__":
