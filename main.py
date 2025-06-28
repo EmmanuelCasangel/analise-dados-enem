@@ -2,8 +2,14 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 import seaborn as sns
-import matplotlib.pyplot as plt
 from scipy.stats import chi2_contingency
+import os
+import matplotlib.pyplot as plt
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import AgglomerativeClustering
+import os
+
 from sklearn.feature_selection import mutual_info_regression
 
 def main():
@@ -35,10 +41,11 @@ def main():
     st.title("Análise de Dados do ENEM")
     st.subheader("Dashboard de Microdados Educacionais")
     
-    tab_intro, tab_enem2023, tab_exploracao = st.tabs([
+    tab_intro, tab_enem2023, tab_exploracao, tab_clusterizacao = st.tabs([
         "Introdução", 
         "Microdados ENEM 2023", 
-        "Exploração de Dados"
+        "Exploração de Dados",
+        "Clusterização de Dados"
     ])
     
     with tab_intro:
@@ -135,26 +142,37 @@ def main():
                 return 'Ausente/Eliminado'
             return np.nan
 
-        df['Status'] = df.apply(classifica_status, axis=1)
+        resultado_path = 'resultado_tipo_escola.csv'
+        if os.path.exists(resultado_path):
+            df_resultado = pd.read_csv(resultado_path)
+        else:
+            df['Status'] = df.apply(classifica_status, axis=1)
 
-        # Mapeia os tipos de escola para nomes legíveis
-        mapa_escola = {1: 'Pública', 2: 'Privada', 3: 'Não Informada'}
-        df['Tipo de Escola'] = df['TP_ESCOLA'].map(mapa_escola)
+            # Mapeia os tipos de escola para nomes legíveis
+            mapa_escola = {1: 'Pública', 2: 'Privada', 3: 'Não Informada'}
+            df['Tipo de Escola'] = df['TP_ESCOLA'].map(mapa_escola)
 
-        # Agrupa e conta
-        agrupado = df.groupby(['Tipo de Escola', 'Status']).size().unstack(fill_value=0)
-        agrupado['Total'] = agrupado.sum(axis=1)
-        agrupado['% Presentes'] = agrupado.get('Presente', 0) / agrupado['Total'] * 100
-        agrupado['% Ausentes/Eliminados'] = agrupado.get('Ausente/Eliminado', 0) / agrupado['Total'] * 100
+            # Agrupa e conta
+            agrupado = df.groupby(['Tipo de Escola', 'Status']).size().unstack(fill_value=0)
+            agrupado['Total'] = agrupado.sum(axis=1)
+            agrupado['% Presentes'] = agrupado.get('Presente', 0) / agrupado['Total'] * 100
+            agrupado['% Ausentes/Eliminados'] = agrupado.get('Ausente/Eliminado', 0) / agrupado['Total'] * 100
 
-        # Prepara DataFrame final
-        df_resultado = agrupado.reset_index()[
-            ['Tipo de Escola', '% Presentes', '% Ausentes/Eliminados', 'Presente', 'Ausente/Eliminado',
-             'Total']].fillna(0)
+            # Prepara DataFrame final
+            df_resultado = agrupado.reset_index()[
+                ['Tipo de Escola', '% Presentes', '% Ausentes/Eliminados', 'Presente', 'Ausente/Eliminado',
+                 'Total']].fillna(0)
+            df_resultado.to_csv(resultado_path, index=False)
+
+
 
         # Visualização
-        st.subheader("Percentual de Presença e Ausência/Eliminação por Tipo de Escola")
-        st.dataframe(df_resultado[["Tipo de Escola", "% Presentes", "% Ausentes/Eliminados"]])
+        st.subheader("Percentual e Total de Presença/Ausência por Tipo de Escola")
+        st.dataframe(
+            df_resultado[
+                ["Tipo de Escola", "% Presentes", "% Ausentes/Eliminados", "Presente", "Ausente/Eliminado", "Total"]],
+            use_container_width=True
+        )
         st.bar_chart(
             df_resultado.set_index("Tipo de Escola")[["% Presentes", "% Ausentes/Eliminados"]],
             use_container_width=True
@@ -188,23 +206,24 @@ def main():
                 'Q021', 'Q022', 'Q023', 'Q024', 'Q025', 'TP_FAIXA_ETARIA', 'TP_SEXO', 'TP_ESTADO_CIVIL',
                 'TP_COR_RACA', 'TP_ESCOLA'
             ]
-            df_cat = df[variaveis_cat].dropna()
 
-            matriz_v = pd.DataFrame(
-                np.zeros((len(variaveis_cat), len(variaveis_cat))),
-                columns=variaveis_cat, index=variaveis_cat
-            )
+            if os.path.exists('matriz_v_cramer.csv'):
+                matriz_v = pd.read_csv('matriz_v_cramer.csv', index_col=0)
+            else:
+                df_cat = df[variaveis_cat].dropna()
+                matriz_v = pd.DataFrame(
+                    np.zeros((len(variaveis_cat), len(variaveis_cat))),
+                    columns=variaveis_cat, index=variaveis_cat
+                )
 
-            for i, var1 in enumerate(variaveis_cat):
-                for j, var2 in enumerate(variaveis_cat):
-                    if i >= j:
-                        matriz_v.iloc[i, j] = cramers_v(df_cat[var1], df_cat[var2])
+                for i, var1 in enumerate(variaveis_cat):
+                    for j, var2 in enumerate(variaveis_cat):
+                        if i >= j:
+                            matriz_v.iloc[i, j] = cramers_v(df_cat[var1], df_cat[var2])
 
-            # Salvar matriz V de Cramer
-            matriz_v.to_csv('matriz_v_cramer.csv')
-            #
-            # # Para carregar depois:
-            # matriz_v = pd.read_csv('matriz_v_cramer.csv', index_col=0)
+                # Salvar matriz V de Cramer
+                matriz_v.to_csv('matriz_v_cramer.csv')
+
 
             # Extrai pares únicos (sem diagonal e sem duplicatas)
             correlacoes = []
@@ -243,23 +262,116 @@ def main():
         for col in categoricas:
             df_encoded[col] = df_encoded[col].astype("category").cat.codes
 
+        # Lista para armazenar os rankings de cada nota
+        mi_rankings = []
+
         # Calcule e exiba o ranking para cada nota
         for nota in notas:
-            mi_scores = mutual_info_regression(
-                df_encoded[categoricas], df_encoded[nota], discrete_features=True, random_state=0
-            )
-            mi_ranking = pd.Series(mi_scores, index=categoricas).sort_values(ascending=False)
-            # Salva o ranking em CSV
-            mi_ranking.to_csv(f'mi_ranking_{nota}.csv')
 
-            # mi_ranking = pd.read_csv(f'mi_ranking_{nota}.csv', index_col=0)
+            if os.path.exists(f'mi_ranking_{nota}.csv'):
+                mi_ranking = pd.read_csv(f'mi_ranking_{nota}.csv', index_col=0)
+            else:
+                mi_scores = mutual_info_regression(
+                    df_encoded[categoricas], df_encoded[nota], discrete_features=True, random_state=0
+                )
+                mi_ranking = pd.Series(mi_scores, index=categoricas).sort_values(ascending=False)
+                # Salva o ranking em CSV
+                mi_ranking.to_csv(f'mi_ranking_{nota}.csv')
 
+
+            mi_rankings.append(mi_ranking)
             # Exibe no Streamlit
             st.subheader(f"Variáveis categóricas mais correlacionadas com {nota}")
             st.dataframe(mi_ranking.reset_index().rename(columns={'index': 'Variável', 0: 'Informação Mútua'}))
 
+        # Concatena todos os rankings em um DataFrame
+        mi_concat = pd.concat(mi_rankings, axis=1)
+        mi_concat.columns = notas
+
+        # Calcula a média das informações mútuas para cada variável
+        mi_concat['Média Informação Mútua'] = mi_concat.mean(axis=1)
+
+        # Ordena do maior para o menor
+        mi_geral = mi_concat['Média Informação Mútua'].sort_values(ascending=False)
+
+        # Exibe no Streamlit
+        st.subheader("Ranking Geral das Variáveis Categóricas (Média das Notas)")
+        st.dataframe(mi_geral.reset_index().rename(
+            columns={'index': 'Variável', 'Média Informação Mútua': 'Média Informação Mútua'}))
+
+        # Seleciona os nomes das 10 variáveis com maior média
+        top_10_variaveis_categoricas = mi_geral.head(10).index.tolist()
+
+    with tab_clusterizacao:
+        st.header("Clusterização de Dados")
+        st.markdown("""
+        Nesta seção, aplicaremos técnicas de clusterização nos dados do ENEM, utilizando as variáveis categóricas mais relevantes identificadas anteriormente e as notas dos participantes.
+        O objetivo é agrupar os participantes com base em características comuns, permitindo uma análise mais aprofundada dos grupos formados.
+        """)
+
+        st.subheader("Variáveis Selecionadas para Clusterização")
+        st.write("As 10 variáveis categóricas mais relevantes para a clusterização são:")
+        st.write(top_10_variaveis_categoricas)
+        st.write("As notas a serem utilizadas na clusterização são:")
+        st.write(notas)
+
+        # Seleção das variáveis
+        variaveis_cluster = top_10_variaveis_categoricas + notas
+        df_cluster = df[variaveis_cluster].dropna()
+
+        # Codificação das variáveis categóricas
+        for col in top_10_variaveis_categoricas:
+            df_cluster[col] = df_cluster[col].astype("category").cat.codes
+
+        # Amostragem para performance (ex: 20.000 linhas)
+        df_sample = df_cluster.sample(n=20000, random_state=42)
+
+        # Padronização das variáveis
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(df_sample)
+
+        # scores = []
+        # ks = range(2, 8)
+        # for k in ks:
+        #     cluster = AgglomerativeClustering(n_clusters=k, linkage='ward')
+        #     labels = cluster.fit_predict(X_scaled)
+        #     score = silhouette_score(X_scaled, labels)
+        #     scores.append(score)
+        #
+        # plt.plot(ks, scores, marker='o')
+        # plt.xlabel('Número de clusters')
+        # plt.ylabel('Silhouette Score')
+        # plt.title('Escolha do número de clusters')
+        # st.pyplot(plt)
+        # plt.clf()
 
 
+        # Caminho do arquivo de clusters
+        cluster_path = 'resultado_clusters_hierarquicos.csv'
+
+        if os.path.exists(cluster_path):
+            df_result = pd.read_csv(cluster_path)
+        else:
+            # Clusterização hierárquica (ex: 3 clusters)
+            cluster = AgglomerativeClustering(n_clusters=3, linkage='ward')
+            labels = cluster.fit_predict(X_scaled)
+            df_result = df_sample.copy()
+            df_result['cluster'] = labels
+            df_result.to_csv(cluster_path, index=False)
+
+        # 1. Distribuição dos clusters
+        sns.countplot(x='cluster', data=df_result)
+        plt.title('Distribuição dos Clusters')
+        st.pyplot(plt)
+        plt.clf()
+
+        # 2. Boxplot das notas por cluster
+        for nota in notas:
+            plt.figure()
+            sns.boxplot(x='cluster', y=nota, data=df_result)
+            plt.title(f'Distribuição de {nota} por Cluster')
+            st.pyplot(plt)
+            plt.clf()
 
 
 if __name__ == "__main__":
