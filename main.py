@@ -354,111 +354,107 @@ def main():
         ax.grid(True)
         st.pyplot(fig)
 
-    # with tab_clusterizacao:
-#         st.header("Clusterização de Dados")
-#         st.markdown("""
-#         Nesta seção, aplicaremos técnicas de clusterização nos dados do ENEM, utilizando as variáveis categóricas mais relevantes identificadas anteriormente e as notas dos participantes.
-#         O objetivo é agrupar os participantes com base em características comuns, permitindo uma análise mais aprofundada dos grupos formados.
-#         """)
-#
-#         clusters_path = 'clusters_kmodes.csv'
-#         if os.path.exists(clusters_path):
-#             clusters = pd.read_csv(clusters_path)['cluster'].values
-#         else:
-#             # Ajuste do KModes
-#             km = KModes(n_clusters=5, init='Huang', n_init=5, verbose=1)
-#             clusters = km.fit_predict(df_freq)
-#             pd.DataFrame({'cluster': clusters}).to_csv(clusters_path, index=False)
-#
-#         # Adiciona o cluster ao DataFrame
-#         df_sample['cluster'] = clusters
-#
-#         # Defina uma paleta de cores bem contrastantes (exemplo para até 5 clusters)
-#         cores_clusters = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-#
-#
-#         # Exibe os primeiros resultados
-#         st.write(df_sample.head())
-#
-#         # Calcula a pontuação socioeconômica para cada participante da amostra
-#         df_sample['pontuacao_socioeconomica'] = df_sample.apply(
-#             lambda row: calcular_pontuacao(row.to_dict()), axis=1
-#         )
-#
-#         # Gráfico de distribuição da pontuação socioeconômica por cluster
-#         st.subheader("Distribuição da Pontuação Socioeconômica por Cluster")
-#         fig, ax = plt.subplots(figsize=(8, 4))
-#         sns.boxplot(
-#             data=df_sample,
-#             x='cluster',
-#             y='pontuacao_socioeconomica',
-#             palette=cores_clusters,
-#             ax=ax
-#         )
-#         ax.set_xlabel('Cluster')
-#         ax.set_ylabel('Pontuação Socioeconômica (0-100)')
-#         ax.set_title('Distribuição da Pontuação Socioeconômica por Cluster')
-#         st.pyplot(fig)
-#
-#         # Seletor de variável categórica
-#         variavel_escolhida = st.selectbox(
-#             "Escolha uma variável para visualizar a distribuição dos clusters:",
-#             list(traducoes_variaveis.keys()),
-#             format_func=lambda x: traducoes_variaveis.get(x, x)
-#         )
-#
-#         # Tradução dos valores da variável
-#         valores_dict = valores_variaveis.get(variavel_escolhida, {})
-#
-#         # Mapeia os valores para rótulos legíveis
-#         df_sample['valor_legivel'] = df_sample[variavel_escolhida].map(valores_dict)
-#
-# #       Agrupa por valor da variável e cluster, conta ocorrências
-#         df_plot = df_sample.groupby(['valor_legivel', 'cluster']).size().reset_index(name='contagem')
-#
-#
-#         # Descobre as categorias presentes e ordena alfabeticamente
-#         categorias_ordenadas = sorted(df_sample[variavel_escolhida].dropna().unique(),
-#                                       key=lambda x: list(string.ascii_uppercase).index(str(x)) if str(
-#                                           x) in string.ascii_uppercase else 99)
-#
-#         # Mapeia para rótulos legíveis na ordem correta
-#         valores_legiveis_ordenados = [valores_dict.get(cat, cat) for cat in categorias_ordenadas]
-#
-#         # Atualiza a ordem das categorias no DataFrame
-#         df_plot['valor_legivel'] = pd.Categorical(df_plot['valor_legivel'], categories=valores_legiveis_ordenados,
-#                                                   ordered=True)
-#
-#         # Calcula o total por categoria
-#         totais = df_plot.groupby('valor_legivel')['contagem'].transform('sum')
-#         # Calcula a proporção
-#         df_plot['proporcao'] = df_plot['contagem'] / totais
-#
-#         # Gráfico de barras ordenado
-#         fig1 = px.bar(
-#             df_plot.sort_values('valor_legivel'),
-#             x='valor_legivel',
-#             y='contagem',
-#             color='cluster',
-#             barmode='group',
-#             color_discrete_sequence =cores_clusters,
-#             category_orders={'valor_legivel': valores_legiveis_ordenados},
-#             title=f'Distribuição dos clusters para {traducoes_variaveis.get(variavel_escolhida, variavel_escolhida)} (contagem)'
-#         )
-#         st.plotly_chart(fig1, use_container_width=True)
-#
-#         # O mesmo para o gráfico de proporção
-#         fig2 = px.bar(
-#             df_plot.sort_values('valor_legivel'),
-#             x='valor_legivel',
-#             y='proporcao',
-#             color='cluster',
-#             barmode='stack',
-#             color_discrete_sequence=cores_clusters,
-#             category_orders={'valor_legivel': valores_legiveis_ordenados},
-#             title=f'Proporção dos clusters para {traducoes_variaveis.get(variavel_escolhida, variavel_escolhida)}'
-#         )
-#         st.plotly_chart(fig2, use_container_width=True)
+    with tab_clusterizacao:
+        st.header("Clusterização de Dados")
+        st.markdown("""
+        Nesta seção, aplicaremos técnicas de clusterização nos dados do ENEM, utilizando as variáveis categóricas mais relevantes identificadas anteriormente e as notas dos participantes.
+        O objetivo é agrupar os participantes com base em características comuns, permitindo uma análise mais aprofundada dos grupos formados.
+        """)
+
+        clusters_path = 'clusters_kmodes.csv'
+        if os.path.exists(clusters_path):
+            clusters = pd.read_csv(clusters_path)['cluster'].values
+        else:
+            # Ajuste do KModes
+            km = KModes(n_clusters=3, init='Huang', n_init=5, verbose=1, n_jobs=-1 )
+            clusters = km.fit_predict(df_freq)
+            pd.DataFrame({'cluster': clusters}).to_csv(clusters_path, index=False)
+
+        # Adiciona o cluster ao DataFrame
+        df['cluster'] = clusters
+
+        # Defina uma paleta de cores bem contrastantes
+        cores_clusters = ['#1f77b4', '#ff7f0e', '#2ca02c']
+
+        # Calcula a pontuação socioeconômica para cada participante da amostra
+        df['pontuacao_socioeconomica'] = df.apply(
+            lambda row: calcular_pontuacao(row.to_dict()), axis=1
+        )
+
+        # Gráfico de distribuição da pontuação socioeconômica por cluster
+        st.subheader("Distribuição da Pontuação Socioeconômica por Cluster")
+        fig, ax = plt.subplots(figsize=(8, 4))
+        sns.boxplot(
+            data=df,
+            x='cluster',
+            y='pontuacao_socioeconomica',
+            palette=cores_clusters,
+            ax=ax
+        )
+        ax.set_xlabel('Cluster')
+        ax.set_ylabel('Pontuação Socioeconômica (0-100)')
+        ax.set_title('Distribuição da Pontuação Socioeconômica por Cluster')
+        st.pyplot(fig)
+
+        # Seletor de variável categórica
+        variavel_escolhida = st.selectbox(
+            "Escolha uma variável para visualizar a distribuição dos clusters:",
+            list(traducoes_variaveis.keys()),
+            format_func=lambda x: traducoes_variaveis.get(x, x)
+        )
+
+        # Tradução dos valores da variável
+        valores_dict = valores_variaveis.get(variavel_escolhida, {})
+
+        # Mapeia os valores para rótulos legíveis
+        df['valor_legivel'] = df[variavel_escolhida].map(valores_dict)
+
+#       Agrupa por valor da variável e cluster, conta ocorrências
+        df_plot = df.groupby(['valor_legivel', 'cluster']).size().reset_index(name='contagem')
+
+
+        # Descobre as categorias presentes e ordena alfabeticamente
+        categorias_ordenadas = sorted(df[variavel_escolhida].dropna().unique(),
+                                      key=lambda x: list(string.ascii_uppercase).index(str(x)) if str(
+                                          x) in string.ascii_uppercase else 99)
+
+        # Mapeia para rótulos legíveis na ordem correta
+        valores_legiveis_ordenados = [valores_dict.get(cat, cat) for cat in categorias_ordenadas]
+
+        # Atualiza a ordem das categorias no DataFrame
+        df_plot['valor_legivel'] = pd.Categorical(df_plot['valor_legivel'], categories=valores_legiveis_ordenados,
+                                                  ordered=True)
+
+        # Calcula o total por categoria
+        totais = df_plot.groupby('valor_legivel')['contagem'].transform('sum')
+        # Calcula a proporção
+        df_plot['proporcao'] = df_plot['contagem'] / totais
+
+        # Gráfico de barras ordenado
+        fig1 = px.bar(
+            df_plot.sort_values('valor_legivel'),
+            x='valor_legivel',
+            y='contagem',
+            color='cluster',
+            barmode='group',
+            color_discrete_sequence =cores_clusters,
+            category_orders={'valor_legivel': valores_legiveis_ordenados},
+            title=f'Distribuição dos clusters para {traducoes_variaveis.get(variavel_escolhida, variavel_escolhida)} (contagem)'
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+
+        # O mesmo para o gráfico de proporção
+        fig2 = px.bar(
+            df_plot.sort_values('valor_legivel'),
+            x='valor_legivel',
+            y='proporcao',
+            color='cluster',
+            barmode='stack',
+            color_discrete_sequence=cores_clusters,
+            category_orders={'valor_legivel': valores_legiveis_ordenados},
+            title=f'Proporção dos clusters para {traducoes_variaveis.get(variavel_escolhida, variavel_escolhida)}'
+        )
+        st.plotly_chart(fig2, use_container_width=True)
 
 if __name__ == "__main__":
     main()
