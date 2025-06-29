@@ -6,11 +6,18 @@ from scipy.stats import chi2_contingency
 import os
 import matplotlib.pyplot as plt
 from sklearn.metrics import silhouette_score
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import AgglomerativeClustering
+from kmodes.kmodes import KModes
+import plotly.express as px
 import os
+import string
 
 from sklearn.feature_selection import mutual_info_regression
+
+from utils import traducoes_variaveis, valores_variaveis, calcular_pontuacao
+
 
 def main():
     colunas_necessarias = [
@@ -41,11 +48,12 @@ def main():
     st.title("Análise de Dados do ENEM")
     st.subheader("Dashboard de Microdados Educacionais")
     
-    tab_intro, tab_enem2023, tab_exploracao, tab_clusterizacao = st.tabs([
+    tab_intro, tab_enem2023, tab_clusterizacao, tab_conclusao, tab_exploracao = st.tabs([
         "Introdução", 
-        "Microdados ENEM 2023", 
+        "Microdados ENEM 2023",
+        "Clusterização de Dados",
+        "Conclusão",
         "Exploração de Dados",
-        "Clusterização de Dados"
     ])
     
     with tab_intro:
@@ -301,78 +309,156 @@ def main():
 
         # Seleciona os nomes das 10 variáveis com maior média
         top_10_variaveis_categoricas = mi_geral.head(10).index.tolist()
-
-    with tab_clusterizacao:
-        st.header("Clusterização de Dados")
-        st.markdown("""
-        Nesta seção, aplicaremos técnicas de clusterização nos dados do ENEM, utilizando as variáveis categóricas mais relevantes identificadas anteriormente e as notas dos participantes.
-        O objetivo é agrupar os participantes com base em características comuns, permitindo uma análise mais aprofundada dos grupos formados.
-        """)
-
-        st.subheader("Variáveis Selecionadas para Clusterização")
-        st.write("As 10 variáveis categóricas mais relevantes para a clusterização são:")
+        st.subheader("Top 10 variáveis categóricas mais relevantes")
         st.write(top_10_variaveis_categoricas)
-        st.write("As notas a serem utilizadas na clusterização são:")
-        st.write(notas)
+        max_cardinalidade = df[top_10_variaveis_categoricas].nunique().max()
+        st.write(f"Cardinalidade máxima das top 10 variáveis categóricas: {max_cardinalidade}")
+        min_cardinalidade = df[top_10_variaveis_categoricas].nunique().min()
+        st.write(f"Cardinalidade mínima das top 10 variáveis categóricas: {min_cardinalidade}")
+        media_cardinalidade = df[top_10_variaveis_categoricas].nunique().mean()
+        st.write(f"Cardinalidade média das top 10 variáveis categóricas: {media_cardinalidade:.2f}")
 
         # Seleção das variáveis
-        variaveis_cluster = top_10_variaveis_categoricas + notas
-        df_cluster = df[variaveis_cluster].dropna()
-
-        # Codificação das variáveis categóricas
-        for col in top_10_variaveis_categoricas:
-            df_cluster[col] = df_cluster[col].astype("category").cat.codes
-
-        # Amostragem para performance (ex: 20.000 linhas)
-        df_sample = df_cluster.sample(n=20000, random_state=42)
-
-        # Padronização das variáveis
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(df_sample)
-
-        # scores = []
-        # ks = range(2, 8)
-        # for k in ks:
-        #     cluster = AgglomerativeClustering(n_clusters=k, linkage='ward')
-        #     labels = cluster.fit_predict(X_scaled)
-        #     score = silhouette_score(X_scaled, labels)
-        #     scores.append(score)
-        #
-        # plt.plot(ks, scores, marker='o')
-        # plt.xlabel('Número de clusters')
-        # plt.ylabel('Silhouette Score')
-        # plt.title('Escolha do número de clusters')
-        # st.pyplot(plt)
-        # plt.clf()
+        variaveis_cluster = top_10_variaveis_categoricas
 
 
-        # Caminho do arquivo de clusters
-        cluster_path = 'resultado_clusters_hierarquicos.csv'
 
-        if os.path.exists(cluster_path):
-            df_result = pd.read_csv(cluster_path)
+        # Frequency Encoding
+        df_freq = df[variaveis_cluster].copy()
+        for col in variaveis_cluster:
+            freq = df_freq[col].value_counts(normalize=True)
+            df_freq[col] = df_freq[col].map(freq)
+
+
+        K = [2, 3, 4, 5, 6, 7, 8]
+        custos_path = 'custos_kmodes.csv'
+        if os.path.exists(custos_path):
+            custos = pd.read_csv(custos_path)['custo'].tolist()
         else:
-            # Clusterização hierárquica (ex: 3 clusters)
-            cluster = AgglomerativeClustering(n_clusters=3, linkage='ward')
-            labels = cluster.fit_predict(X_scaled)
-            df_result = df_sample.copy()
-            df_result['cluster'] = labels
-            df_result.to_csv(cluster_path, index=False)
+            # Lista para armazenar o custo de cada k
+            custos = []
 
-        # 1. Distribuição dos clusters
-        sns.countplot(x='cluster', data=df_result)
-        plt.title('Distribuição dos Clusters')
-        st.pyplot(plt)
-        plt.clf()
+            for k in K:
+                km = KModes(n_clusters=k, init='Huang', n_init=3, verbose=0, random_state=42)
+                km.fit(df_freq)
+                custos.append(km.cost_)
+            pd.DataFrame({'k': list(K), 'custo': custos}).to_csv(custos_path, index=False)
 
-        # 2. Boxplot das notas por cluster
-        for nota in notas:
-            plt.figure()
-            sns.boxplot(x='cluster', y=nota, data=df_result)
-            plt.title(f'Distribuição de {nota} por Cluster')
-            st.pyplot(plt)
-            plt.clf()
+        # Plota o gráfico do cotovelo no Streamlit
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(K, custos, marker='o')
+        ax.set_xlabel('Número de clusters (k)')
+        ax.set_ylabel('Custo (inércia)')
+        ax.set_title('Método do Cotovelo para KModes')
+        ax.set_xticks(list(K))
+        ax.grid(True)
+        st.pyplot(fig)
 
+    # with tab_clusterizacao:
+#         st.header("Clusterização de Dados")
+#         st.markdown("""
+#         Nesta seção, aplicaremos técnicas de clusterização nos dados do ENEM, utilizando as variáveis categóricas mais relevantes identificadas anteriormente e as notas dos participantes.
+#         O objetivo é agrupar os participantes com base em características comuns, permitindo uma análise mais aprofundada dos grupos formados.
+#         """)
+#
+#         clusters_path = 'clusters_kmodes.csv'
+#         if os.path.exists(clusters_path):
+#             clusters = pd.read_csv(clusters_path)['cluster'].values
+#         else:
+#             # Ajuste do KModes
+#             km = KModes(n_clusters=5, init='Huang', n_init=5, verbose=1)
+#             clusters = km.fit_predict(df_freq)
+#             pd.DataFrame({'cluster': clusters}).to_csv(clusters_path, index=False)
+#
+#         # Adiciona o cluster ao DataFrame
+#         df_sample['cluster'] = clusters
+#
+#         # Defina uma paleta de cores bem contrastantes (exemplo para até 5 clusters)
+#         cores_clusters = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+#
+#
+#         # Exibe os primeiros resultados
+#         st.write(df_sample.head())
+#
+#         # Calcula a pontuação socioeconômica para cada participante da amostra
+#         df_sample['pontuacao_socioeconomica'] = df_sample.apply(
+#             lambda row: calcular_pontuacao(row.to_dict()), axis=1
+#         )
+#
+#         # Gráfico de distribuição da pontuação socioeconômica por cluster
+#         st.subheader("Distribuição da Pontuação Socioeconômica por Cluster")
+#         fig, ax = plt.subplots(figsize=(8, 4))
+#         sns.boxplot(
+#             data=df_sample,
+#             x='cluster',
+#             y='pontuacao_socioeconomica',
+#             palette=cores_clusters,
+#             ax=ax
+#         )
+#         ax.set_xlabel('Cluster')
+#         ax.set_ylabel('Pontuação Socioeconômica (0-100)')
+#         ax.set_title('Distribuição da Pontuação Socioeconômica por Cluster')
+#         st.pyplot(fig)
+#
+#         # Seletor de variável categórica
+#         variavel_escolhida = st.selectbox(
+#             "Escolha uma variável para visualizar a distribuição dos clusters:",
+#             list(traducoes_variaveis.keys()),
+#             format_func=lambda x: traducoes_variaveis.get(x, x)
+#         )
+#
+#         # Tradução dos valores da variável
+#         valores_dict = valores_variaveis.get(variavel_escolhida, {})
+#
+#         # Mapeia os valores para rótulos legíveis
+#         df_sample['valor_legivel'] = df_sample[variavel_escolhida].map(valores_dict)
+#
+# #       Agrupa por valor da variável e cluster, conta ocorrências
+#         df_plot = df_sample.groupby(['valor_legivel', 'cluster']).size().reset_index(name='contagem')
+#
+#
+#         # Descobre as categorias presentes e ordena alfabeticamente
+#         categorias_ordenadas = sorted(df_sample[variavel_escolhida].dropna().unique(),
+#                                       key=lambda x: list(string.ascii_uppercase).index(str(x)) if str(
+#                                           x) in string.ascii_uppercase else 99)
+#
+#         # Mapeia para rótulos legíveis na ordem correta
+#         valores_legiveis_ordenados = [valores_dict.get(cat, cat) for cat in categorias_ordenadas]
+#
+#         # Atualiza a ordem das categorias no DataFrame
+#         df_plot['valor_legivel'] = pd.Categorical(df_plot['valor_legivel'], categories=valores_legiveis_ordenados,
+#                                                   ordered=True)
+#
+#         # Calcula o total por categoria
+#         totais = df_plot.groupby('valor_legivel')['contagem'].transform('sum')
+#         # Calcula a proporção
+#         df_plot['proporcao'] = df_plot['contagem'] / totais
+#
+#         # Gráfico de barras ordenado
+#         fig1 = px.bar(
+#             df_plot.sort_values('valor_legivel'),
+#             x='valor_legivel',
+#             y='contagem',
+#             color='cluster',
+#             barmode='group',
+#             color_discrete_sequence =cores_clusters,
+#             category_orders={'valor_legivel': valores_legiveis_ordenados},
+#             title=f'Distribuição dos clusters para {traducoes_variaveis.get(variavel_escolhida, variavel_escolhida)} (contagem)'
+#         )
+#         st.plotly_chart(fig1, use_container_width=True)
+#
+#         # O mesmo para o gráfico de proporção
+#         fig2 = px.bar(
+#             df_plot.sort_values('valor_legivel'),
+#             x='valor_legivel',
+#             y='proporcao',
+#             color='cluster',
+#             barmode='stack',
+#             color_discrete_sequence=cores_clusters,
+#             category_orders={'valor_legivel': valores_legiveis_ordenados},
+#             title=f'Proporção dos clusters para {traducoes_variaveis.get(variavel_escolhida, variavel_escolhida)}'
+#         )
+#         st.plotly_chart(fig2, use_container_width=True)
 
 if __name__ == "__main__":
     main()

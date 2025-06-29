@@ -10,3 +10,4 @@ sm
 sns
 numpy
 scikit-learn
+kmodes
